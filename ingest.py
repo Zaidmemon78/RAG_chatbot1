@@ -1,26 +1,36 @@
 import os
-from langchain_community.document_loaders import PyPDFDirectoryLoader
-from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_huggingface import HuggingFaceEmbeddings
-from langchain_community.vectorstores import FAISS
+from dotenv import load_dotenv
+from llama_index.core import VectorStoreIndex, SimpleDirectoryReader, Settings, StorageContext
+from llama_index.embeddings.huggingface import HuggingFaceEmbedding
 
+# 1. Environment Setup
+load_dotenv()
+
+# 2. Settings Config (Wohi same settings jo bot me use hogi)
+print("⚙️  Configuring Embeddings...")
+Settings.embed_model = HuggingFaceEmbedding(model_name="sentence-transformers/all-MiniLM-L6-v2")
+
+
+# Note: Ingest karte waqt LLM ki zaroorat nahi hoti, sirf Embeddings chahiye.
 
 def create_vector_db():
-    print("🚀 PDF Load ho rahi hai...")
-    loader = PyPDFDirectoryLoader("data")
-    documents = loader.load()
+    print("🚀 PDF Load ho rahi hai 'data' folder se...")
+    try:
+        # Data folder se files padho
+        documents = SimpleDirectoryReader("data").load_data()
+        print(f"📄 Total Documents Loaded: {len(documents)}")
 
-    print(f"📄 {len(documents)} Pages mile.")
+        print("🧠 Index aur Embeddings ban rahe hain...")
+        index = VectorStoreIndex.from_documents(documents)
 
-    text_splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=50)
-    texts = text_splitter.split_documents(documents)
+        # 3. Save to Disk (Sabse Important Step)
+        print("💾 Index save ho raha hai 'storage' folder mein...")
+        index.storage_context.persist(persist_dir="./storage")
 
-    print("🧠 Embeddings ban rahi hain...")
-    embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
+        print("✅ Success! Database 'storage' folder me save ho gaya hai.")
 
-    db = FAISS.from_documents(texts, embeddings)
-    db.save_local("faiss_index")
-    print("✅ Database 'faiss_index' ready hai!")
+    except Exception as e:
+        print(f"❌ Error: {e}")
 
 
 if __name__ == "__main__":

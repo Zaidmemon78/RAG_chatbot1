@@ -1,82 +1,106 @@
 import os
-import sys
 from dotenv import load_dotenv
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
 
-# --- 1. SMART IMPORTS (Jo bhi mile use kar lo) ---
-try:
-    # Naya Tareeka
-    from langchain.chains import RetrievalQA
-except ImportError:
-    # Purana Tareeka (Backup)
-    import langchain.chains.retrieval_qa.base
+# LlamaIndex Imports
+from llama_index.core import StorageContext, load_index_from_storage, Settings
+from llama_index.llms.groq import Groq
+from llama_index.embeddings.huggingface import HuggingFaceEmbedding
 
-try:
-    from langchain_core.prompts import PromptTemplate
-except ImportError:
-    import langchain.prompts
-
-from langchain_groq import ChatGroq
-from langchain_huggingface import HuggingFaceEmbeddings
-from langchain_community.vectorstores import FAISS
-
-# Load Env
+# 1. Environment Load
 load_dotenv()
+api_key = os.getenv("GROQ_API_KEY")
+
+if not api_key:
+    print("❌ Error: API Key nahi mili! .env file check karein.")
+
+# 2. FastAPI Setup
+app = FastAPI(title="LlamaIndex RAG API", version="1.0")
+
+# Global Variable
+query_engine = None
 
 
-def start_chat():
-    print("⚙️ System Load ho raha hai... (Darna mat, error nahi aayega)")
-
-    # 1. Embeddings
-    embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
-
-    # 2. Load DB
-    if not os.path.exists("faiss_index"):
-        print("❌ Error: 'faiss_index' folder nahi mila! Pehle 'ingest.py' chalao.")
-        return
+# 3. System Load (Startup par)
+@app.on_event("startup")
+async def startup_event():
+    global query_engine
+    print("⚙️  System Initialize ho raha hai...")
 
     try:
-        db = FAISS.load_local("faiss_index", embeddings, allow_dangerous_deserialization=True)
+        # A. Settings (Wohi same jo ingest.py me thi)
+        Settings.llm = Groq(model="llama-3.3-70b-versatile", api_key=api_key)
+        Settings.embed_model = HuggingFaceEmbedding(model_name="sentence-transformers/all-MiniLM-L6-v2")
+
+        # B. Storage se Index uthao
+        print("📂 Loading Index from 'storage' folder...")
+
+        # Check agar folder exist karta hai
+        if not os.path.exists("./storage"):
+            raise FileNotFoundError("Storage folder nahi mila. Pehle 'python ingest.py' chalao.")
+
+        storage_context = StorageContext.from_defaults(persist_dir="./storage")
+        index = load_index_from_storage(storage_context)
+
+        # C. Engine Ready
+        query_engine = index.as_query_engine()
+        print("✅ System Ready! API is running.")
+
     except Exception as e:
-        print(f"❌ DB Error: {e}")
-        return
-
-    # 3. LLM Setup (Groq)
-    # Note: Agar PyCharm 'model_name' par yellow line dikhaye toh IGNORE karna.
-    llm = ChatGroq(model_name="llama3-8b-8192", temperature=0.5)
-
-    # 4. Prompt Template (Is tareeke se error nahi aayega)
-    template_text = """
-    Context: {context}
-    Question: {question}
-    Answer (Hindi/English mix):
-    """
-    prompt = PromptTemplate(template=template_text, input_variables=['context', 'question'])
-
-    # 5. Chain Creation
-    # PyCharm ko ye line kabhi samajh nahi aati, par ye RUN hoti hai.
-    qa_chain = RetrievalQA.from_chain_type(
-        llm=llm,
-        retriever=db.as_retriever(search_kwargs={'k': 3}),
-        chain_type_kwargs={"prompt": prompt}
-    )
-
-    print("\n✅ Bot Ready hai! (Exit karne ke liye 'quit' likhein)\n")
-
-    # 6. Chat Loop
-    while True:
-        try:
-            query = input("You: ")
-            if query.lower() == 'quit':
-                print("Bye Bye! 👋")
-                break
-
-            # Jawab mango
-            response = qa_chain.invoke({"query": query})
-            print(f"Bot: {response['result']}\n")
-
-        except Exception as e:
-            print(f"⚠️ Error: {e}")
+        print(f"❌ Error during startup: {e}")
+        query_engine = None
 
 
-if __name__ == "__main__":
-    start_chat()
+# 4. Request Model
+class QueryRequest(BaseModel):
+    query: str
+
+
+# 5. API Endpoint (Updated with Sources)
+@app.post("/chat")
+async def chat_endpoint(request: QueryRequest):
+    if query_engine is None:
+        raise HTTPException(status_code=500, detail="System not initialized. Check server logs.")
+
+    try:
+        # Query Engine call
+        response = query_engine.query(request.query)
+
+        # --- Source Extraction Logic ---
+        source_data = []
+
+        # LlamaIndex response.source_nodes me references rakhta hai
+        if response.source_nodes:
+            for node_with_score in response.source_nodes:
+                # Actual node data
+                node = node_with_score.node
+
+                # Metadata (Page number, Filename)
+                page_num = node.metadata.get("page_label", "N/A")
+                file_name = node.metadata.get("file_name", "N/A")
+
+                # Text Snippet (First 200 chars)
+                text_content = node.get_content()
+                snippet = text_content[:200] + "..." if len(text_content) > 200 else text_content
+
+                # Similarity Score
+                score = round(node_with_score.score, 2) if node_with_score.score else 0.0
+
+                source_data.append({
+                    "file": file_name,
+                    "page": page_num,
+                    "text": snippet,
+                    "score": score
+                })
+
+        # Return JSON with answer AND sources
+        return {
+            "response": str(response),
+            "sources": source_data
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+# Run command: uvicorn main:app --reload

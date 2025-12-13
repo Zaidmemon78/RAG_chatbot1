@@ -6,28 +6,28 @@ from llama_index.embeddings.huggingface import HuggingFaceEmbedding
 # 1. Environment Setup
 load_dotenv()
 
-# 2. Settings Config (Wohi same settings jo bot me use hogi)
+# 2. Settings Config (Same settings that will be used in the bot)
 print("⚙️  Configuring Embeddings...")
 Settings.embed_model = HuggingFaceEmbedding(model_name="sentence-transformers/all-MiniLM-L6-v2")
 
 
-# Note: Ingest karte waqt LLM ki zaroorat nahi hoti, sirf Embeddings chahiye.
+# Note: No LLM needed for ingestion, only Embeddings.
 
 def create_vector_db():
-    print("🚀 PDF Load ho rahi hai 'data' folder se...")
+    print("🚀 Loading PDFs from 'data' folder...")
     try:
-        # Data folder se files padho
+        # Read files from data folder
         documents = SimpleDirectoryReader("data").load_data()
         print(f"📄 Total Documents Loaded: {len(documents)}")
 
-        print("🧠 Index aur Embeddings ban rahe hain...")
+        print("🧠 Creating Index and Embeddings...")
         index = VectorStoreIndex.from_documents(documents)
 
-        # 3. Save to Disk (Sabse Important Step)
-        print("💾 Index save ho raha hai 'storage' folder mein...")
+        # 3. Save to Disk (Most Important Step)
+        print("💾 Saving Index to 'storage' folder...")
         index.storage_context.persist(persist_dir="./storage")
 
-        print("✅ Success! Database 'storage' folder me save ho gaya hai.")
+        print("✅ Success! Database saved in 'storage' folder.")
 
     except Exception as e:
         print(f"❌ Error: {e}")

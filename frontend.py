@@ -9,19 +9,19 @@ st.markdown("---")
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-# Purani chat history dikhana
+# Display previous chat history
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
-        # Agar sources save kiye the toh wo bhi dikhao (Optional logic)
+        # If sources were saved, display them too (Optional logic)
         if "sources" in message:
             with st.expander("📚 Reference Sources"):
                 for source in message["sources"]:
                     st.markdown(f"- **Page {source['page']}** ({source['file']})")
                     st.caption(f"\"{source['text']}\"")
 
-# Naya Input
-if prompt := st.chat_input("Apna sawal yahan likhein..."):
+# New Input
+if prompt := st.chat_input("Type your question here..."):
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
         st.markdown(prompt)
@@ -41,22 +41,22 @@ if prompt := st.chat_input("Apna sawal yahan likhein..."):
                 answer = data.get("response", "No answer")
                 sources = data.get("sources", [])
 
-                # 1. Answer dikhao
+                # 1. Display Answer
                 message_placeholder.markdown(answer)
 
-                # 2. Sources dikhao (Expander ke andar)
+                # 2. Display Sources (Inside Expander)
                 if sources:
-                    with st.expander("📚 Sources (Kahan se uthaya?)"):
+                    with st.expander("📚 Sources (References)"):
                         for source in sources:
                             st.markdown(f"**📄 Page {source['page']}** - *{source['file']}*")
                             st.info(f"Snippet: {source['text']}")
                             st.markdown("---")
 
-                # History update with sources
+                # Update history with sources
                 st.session_state.messages.append({
                     "role": "assistant",
                     "content": answer,
-                    "sources": sources  # Sources ko bhi history me save kar liya
+                    "sources": sources  # Saved sources to history as well
                 })
 
             else:
